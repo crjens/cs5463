@@ -1,0 +1,31 @@
+{
+    "name": "cs5463",
+    "version": "1.0.0",
+    "description": "raspberry pi power meter using CS5463 chip",
+    "main": "build/Release/cs5463.node",
+    "homepage": "https://github.com/crjens/cs5463",
+    "scripts": {
+        "install": "/bin/bash ./install.sh"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git://github.com/crjens/cs5463.git"
+    },
+    "keywords": [
+        "spi",
+        "raspberry",
+        "pi",
+        "raspberrypi",
+        "rpi",
+        "power",
+        "meter",
+        "powermeter",
+        "energy"
+    ],
+    "author": "Craig Jensen",
+    "license": "BSD",
+    "gypfile": true,
+    "dependencies": {
+        "node-gyp": "*"
+    }
+}
