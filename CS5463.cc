@@ -361,8 +361,8 @@ Handle<Value> ReadCycleWithInterrupts(const Arguments& args) {
 
     // read instantaneuos values for full cycle
 	bool doInterrupts = true;
-	int num=0;
-	long start;
+	//int num=0;
+	//long start;
     startTime = timer_start();
     do 
     {
@@ -537,7 +537,7 @@ Handle<Value> Time(const Arguments& args) {
 			success = false;
 	}
 
-	printf("%sTotal time for %d iterations was %d us (%d us per iteration), min: %d, max: %d\n", success ? "Success: " : "FAILED: " , iterations, telapsed, telapsed / iterations, min, max);
+	printf("%sTotal time for %d iterations was %ld us (%ld us per iteration), min: %ld, max: %ld\n", success ? "Success: " : "FAILED: " , iterations, telapsed, telapsed / iterations, min, max);
 
 	 return v8::Integer::New(success ? 0 : -1);
 }
