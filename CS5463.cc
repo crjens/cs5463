@@ -16,13 +16,34 @@ using namespace node;
 #include <fcntl.h>
 #include <termios.h>
 #include <errno.h>
+#include <sys/time.h>
+#include <time.h>
 #include "wiringPi.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
+static char* Timestamp()
+{
+	static char ts[30];
+	time_t ltime = time(NULL);
+	struct tm * tm = localtime(&ltime);
+	static struct timeval _t;
+	static struct timezone tz;
+	gettimeofday(&_t, &tz);
+
+	sprintf(ts, "%04d-%02d-%02d %02d:%02d:%02d.%06d", tm->tm_year + 1900, tm->tm_mon, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, (int)_t.tv_usec);
+	return ts;
+}
+
 static void errormsg(const char *s)
 {
+	fprintf(stderr, "(%s) Error: %s\n", Timestamp(), s);
 	ThrowException(Exception::Error(String::New(s)));
+}
+
+static void warnmsg(const char *s)
+{
+	fprintf(stderr, "(%s) Warn: %s\n", Timestamp(), s);
 }
 
 const char* ToCString(const v8::String::Utf8Value& value) {
@@ -121,10 +142,6 @@ Handle<Value>  Open(const Arguments& args)
 }
 
 
-
-
-
-
 int SendSpi(char * txBuffer, char * rxBuffer, int bufferLen)
 {
 	// Create Transfer Struct
@@ -140,6 +157,39 @@ int SendSpi(char * txBuffer, char * rxBuffer, int bufferLen)
 	return ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 }
 
+
+void CheckStatusResult(char * status, bool detailed)
+{
+	if (!(status[2] & 0x1))  // IC - invalid command (normally 1)
+		errormsg("IC - Invalid command or status register not successfully read.");
+
+	if (detailed) {
+		if (status[2] & 0x4)  // LSD - Low supply detect
+			warnmsg("LSD - Low supply detect");
+		if (status[2] & 0x8)  // IOD - Modulator oscillation on current channel
+			warnmsg("IOD - Modulator oscillation on current channel");
+		if (status[2] & 0x10)  // VOD - Modulator oscillation on voltage channel
+			warnmsg("VOD - Modulator oscillation on voltage channel");
+		if (status[2] & 0x40)  // TOD - Modulator oscillation on temperature channel
+			warnmsg("TOD - Modulator oscillation on temperature channel");
+
+		if (status[1] & 0x4)  // VSAG - Voltage sag
+			warnmsg("VSAG - Voltage sag");
+		if (status[1] & 0x8)  // IFAULT - Current fault
+			warnmsg("IFAULT - Current fault");
+		if (status[1] & 0x10)  // EOR - Energy out of range
+			warnmsg("EOR - Energy out of range");
+		if (status[1] & 0x20)  // VROR - Vrms out of range
+			warnmsg("VROR - Vrms out of range");
+		if (status[1] & 0x40)  // IROR - Irms out of range
+			warnmsg("IROR - Irms out of range");
+
+		if (status[0] & 0x1)  // VOR - Voltage out of range
+			warnmsg("VOR - Voltage out of range");
+		if (status[0] & 0x2)  // IOR - Current out of range
+			warnmsg("IOR - Current out of range");
+	}
+}
 
 // Send Function
 Handle<Value> ReadCycle(const Arguments& args) {
@@ -206,6 +256,8 @@ Handle<Value> ReadCycle(const Arguments& args) {
 		if (ret < 1)
 			errormsg("can't send spi message");
 
+		CheckStatusResult(rx1 + 1, false);
+
         elapsed = elapsedTime(startTime);
 
     } while (!(rx1[1] & 0x80) && elapsed < 2E9);
@@ -216,9 +268,8 @@ Handle<Value> ReadCycle(const Arguments& args) {
         errormsg("clear failed");
 
 	int num=0;
-	if (elapsed < 2E9)
+	if (elapsed < 2E9) // only if we didn't time out above
 	{
-		
 		char * rx;
 		long start;
 		startTime = timer_start();
@@ -232,7 +283,11 @@ Handle<Value> ReadCycle(const Arguments& args) {
 			if (ret < 1)
 				errormsg("can't send spi message");
 
+			CheckStatusResult(rx + 1, true);
+
 			elapsed = elapsedTime(startTime);
+
+			//printf("num: %d, elapsed: %ld\n", num, elapsed)
 
 			// wait 10 ms for filters to settle before collecting samples
 			if (num < MAX_RESULTS && elapsed > 1E7 && (rx[1] & 0x10) && (0 != memcmp(rx1+5, rx2+5, 3) && 0 != memcmp(rx1+9, rx2+9, 3)))
@@ -274,7 +329,9 @@ void DisableInterrupts()
 {
 	// disable interrupts
 	char tx[] = { 0x74, 0x00, 0x00, 0x00};
-	SendSpi(tx, tx, 4);
+	int ret = SendSpi(tx, tx, 4);
+	if (ret < 1)
+		errormsg("DisableInterrupts failed");
 }
 
 void EnableInterrupts(char * buffer, int maxSamples)
@@ -284,8 +341,10 @@ void EnableInterrupts(char * buffer, int maxSamples)
 	isrResultBuffer = buffer;
 	
 	char tx[] = {	0x5E, 0xFF, 0xFF, 0xFF,   // clear status
-					0x74, 0x10, 0x00, 0x00 }; // enable interrupts
-	SendSpi(tx, tx, 8);
+					0x74, 0x10, 0x00, 0x00 }; // enable interrupts (0x74 = write to Mask) (0x10 = fire on CRDY)
+	int ret = SendSpi(tx, tx, 8);
+	if (ret < 1)
+		errormsg("EnableInterrupts failed");
 }
 
 Handle<Value> ReadCycleWithInterrupts(const Arguments& args) {
@@ -350,6 +409,8 @@ Handle<Value> ReadCycleWithInterrupts(const Arguments& args) {
 		if (ret < 1)
 			errormsg("can't send spi message");
 
+		CheckStatusResult(rx + 1, false);
+
         elapsed = elapsedTime(startTime);
 
     } while (!(rx[1] & 0x80) && elapsed < 2E9);
@@ -371,6 +432,8 @@ Handle<Value> ReadCycleWithInterrupts(const Arguments& args) {
 		if (ret < 1)
 			errormsg("can't send spi message");
 
+		CheckStatusResult(rx + 1, false);
+
         elapsed = elapsedTime(startTime);
 
 		// Check CRDY bit
@@ -388,20 +451,6 @@ Handle<Value> ReadCycleWithInterrupts(const Arguments& args) {
 			DisableInterrupts();
 			//printf("disable ints: %d\n", isrSampleCount);
 		}
-
-
-		// wait 10 ms for filters to settle before collecting samples
-        /*if (elasped > 1E7 && num < MAX_RESULTS && (rx[1] & 0x40) && (!memcmp(rx1+5, rx2+5, 3) || !memcmp(rx1+9, rx2+9, 3)))
-        {
-			if (num == 0)
-				start = elapsed;
-			long ts = elapsed - start;
-
-			memcpy(out_buffer + (num*SAMPLE_SIZE), rx+5, 3);      // inst current
-			memcpy(out_buffer + (num*SAMPLE_SIZE) + 3, rx+9, 3);  // inst voltage
-			memcpy(out_buffer + (num*SAMPLE_SIZE) + 6, &ts, 4);   // timestamp in ns
-			num++;
-		} */
     } while (!(rx[1] & 0x80) && elapsed < 2E9);
 
 	if (txStart[0] == 0xE8)
@@ -587,7 +636,7 @@ Handle<Value> DigitalPulse(const Arguments& args) {
     return v8::Integer::New(0);
 }
 
-void IsrHandler2(void)
+void IsrHandler(void)
 {
 	//printf("interrupt\n");
 	// handle interrupt here (connect DO pin on chip to ISR_PIN gpio input pin on pi)
@@ -644,7 +693,7 @@ Handle<Value> InitializeISR(const Arguments& args) {
 		printf("setting isr pin to: %d, upDn: %d, edge: %d\n", ISR_PIN, upDn, edge);
 
 		pullUpDnControl (ISR_PIN, upDn);
-		if (wiringPiISR(ISR_PIN, edge, &IsrHandler2) < 0)
+		if (wiringPiISR(ISR_PIN, edge, &IsrHandler) < 0)
 		{
 			fprintf (stderr, "Unable to setup ISR: %s\n", strerror (errno)) ;
 			errormsg("Unable to setup ISR");
