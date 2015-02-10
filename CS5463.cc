@@ -112,7 +112,7 @@ Handle<Value>  Close(const Arguments& args) {
     if (fd != 0) {
 
         ret = close(fd);
-		printf("Closed device");
+		fprintf(stdout, "Closed device");
 	}
     fd=0;
 
@@ -135,7 +135,7 @@ Handle<Value>  Open(const Arguments& args)
 	if (args.Length() == 2)
 		speed = (int)(Local<Integer>::Cast(args[1])->Int32Value());
 
-	printf("Opening device: %s at %d\n", device, speed);
+	fprintf(stdout, "Opening device: %s at %d\n", device, speed);
    	ret = OpenDevice(device);
    
     return v8::Integer::New(ret);
@@ -586,7 +586,7 @@ Handle<Value> Time(const Arguments& args) {
 			success = false;
 	}
 
-	printf("%sTotal time for %d iterations was %ld us (%ld us per iteration), min: %ld, max: %ld\n", success ? "Success: " : "FAILED: " , iterations, telapsed, telapsed / iterations, min, max);
+	fprintf(stdout, "%sTotal time for %d iterations was %ld us (%ld us per iteration), min: %ld, max: %ld\n", success ? "Success: " : "FAILED: " , iterations, telapsed, telapsed / iterations, min, max);
 
 	 return v8::Integer::New(success ? 0 : -1);
 }
@@ -627,11 +627,11 @@ Handle<Value> DigitalPulse(const Arguments& args) {
 	int delay = (int)(Local<Integer>::Cast(args[3])->Int32Value());
 		
 	digitalWrite(pin, value1);
-	printf("pin: %d set to: %d\n", pin, value1);
+	fprintf(stdout, "pin: %d set to: %d\n", pin, value1);
 
 	delayMicroseconds(delay);
 	digitalWrite(pin, value2);
-	printf("pin: %d set to: %d\n", pin, value2);
+	fprintf(stdout, "pin: %d set to: %d\n", pin, value2);
 
     return v8::Integer::New(0);
 }
@@ -645,7 +645,7 @@ void IsrHandler(void)
 					0x5E, 0xFF, 0xFF, 0xFF};  // clear status
 	int ret = SendSpi(tx, tx, 12);
 	if (ret < 1) {
-		printf ("can't read from Isr: %s\n", strerror (errno)) ;
+		fprintf (stderr, "can't read from Isr: %s\n", strerror (errno)) ;
 		//errormsg("can't read from Isr");
 	}
 	else
@@ -690,7 +690,7 @@ Handle<Value> InitializeISR(const Arguments& args) {
 		if (args.Length() >2)
 			edge = (int)(Local<Integer>::Cast(args[2])->Int32Value());
 
-		printf("setting isr pin to: %d, upDn: %d, edge: %d\n", ISR_PIN, upDn, edge);
+		fprintf(stdout, "setting isr pin to: %d, upDn: %d, edge: %d\n", ISR_PIN, upDn, edge);
 
 		pullUpDnControl (ISR_PIN, upDn);
 		if (wiringPiISR(ISR_PIN, edge, &IsrHandler) < 0)
