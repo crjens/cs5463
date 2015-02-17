@@ -146,6 +146,7 @@ int SendSpi(char * txBuffer, char * rxBuffer, int bufferLen)
 {
 	// Create Transfer Struct
     struct spi_ioc_transfer tr;
+	memset(&tr, 0, sizeof(tr));
     tr.tx_buf = (unsigned long)txBuffer;
     tr.rx_buf = (unsigned long)rxBuffer;
     tr.len = bufferLen;
@@ -501,6 +502,7 @@ Handle<Value> Send(const Arguments& args) {
 
 	// Create Transfer Struct
     struct spi_ioc_transfer tr;
+	memset(&tr, 0, sizeof(tr));
     tr.tx_buf = (unsigned long)tx;
     tr.rx_buf = (unsigned long)rx;
     tr.len = ARRAY_SIZE(tx);
