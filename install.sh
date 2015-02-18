@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if lscpu | grep Architecture | grep -q armv6 
+if cat /proc/cpuinfo | grep Hardware | grep -q BCM270*
 then 
   # Raspberry Pi 
   git clone git://git.drogon.net/wiringPi 
