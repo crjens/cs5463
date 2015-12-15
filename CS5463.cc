@@ -629,11 +629,11 @@ Handle<Value> DigitalPulse(const Arguments& args) {
 	int delay = (int)(Local<Integer>::Cast(args[3])->Int32Value());
 		
 	digitalWrite(pin, value1);
-	fprintf(stdout, "pin: %d set to: %d\n", pin, value1);
+	//fprintf(stdout, "pin: %d set to: %d\n", pin, value1);
 
 	delayMicroseconds(delay);
 	digitalWrite(pin, value2);
-	fprintf(stdout, "pin: %d set to: %d\n", pin, value2);
+	//fprintf(stdout, "pin: %d set to: %d\n", pin, value2);
 
     return v8::Integer::New(0);
 }
