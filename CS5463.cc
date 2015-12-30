@@ -165,21 +165,10 @@ void IsrHandler(void)
 	}
 }
 
-<<<<<<< HEAD
+
 int OpenDevice(const char * device) {
 	// Open Device and Check
 	int ret = 0;
-=======
-Handle<Value>  Close(const Arguments& args) {
-    int ret = 0;
-    //Close Device
-    if (fd != 0) {
-
-        ret = close(fd);
-		fprintf(stdout, "Closed device");
-	}
-    fd=0;
->>>>>>> origin/master
 
 	fd = open(device, O_RDWR);
 	if (fd < 0)
@@ -201,37 +190,15 @@ Handle<Value>  Close(const Arguments& args) {
 	if (ret == -1)
 		errormsg("can't get bits per word");
 
-<<<<<<< HEAD
 	ret = ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
 	if (ret == -1)
 		errormsg("can't set max speed hz");
-=======
-	fprintf(stdout, "Opening device: %s at %d\n", device, speed);
-   	ret = OpenDevice(device);
-   
-    return v8::Integer::New(ret);
-}
->>>>>>> origin/master
 
 	ret = ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed);
 	if (ret == -1)
 		errormsg("can't get max speed hz");
 
-<<<<<<< HEAD
 	printf("Device opened with mode: %d, bits: %d, speed: %d\n", mode, bits, speed);
-=======
-int SendSpi(char * txBuffer, char * rxBuffer, int bufferLen)
-{
-	// Create Transfer Struct
-    struct spi_ioc_transfer tr;
-	memset(&tr, 0, sizeof(tr));
-    tr.tx_buf = (unsigned long)txBuffer;
-    tr.rx_buf = (unsigned long)rxBuffer;
-    tr.len = bufferLen;
-    tr.delay_usecs = delayTime;
-    tr.speed_hz = speed;
-    tr.bits_per_word = bits;
->>>>>>> origin/master
 
 	return ret;
 }
@@ -591,7 +558,6 @@ void Send(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (ret < 1)
 		errormsg("can't send spi message");
 
-<<<<<<< HEAD
 	// Convert Return Values Back to a Hexstring
 	unsigned int i;
 	char* buf_str = (char*)malloc(2 * ARRAY_SIZE(rx) + 1);
@@ -601,35 +567,6 @@ void Send(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		buf_ptr += sprintf(buf_ptr, "%02X", rx[i]);
 	}
 	*(buf_ptr + 1) = '\0';
-=======
-	// Create Transfer Struct
-    struct spi_ioc_transfer tr;
-	memset(&tr, 0, sizeof(tr));
-    tr.tx_buf = (unsigned long)tx;
-    tr.rx_buf = (unsigned long)rx;
-    tr.len = ARRAY_SIZE(tx);
-    tr.delay_usecs = delayTime;
-    tr.speed_hz = speed;
-    tr.bits_per_word = bits;
-
-
-    // Send SPI-Message
-    ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
-    if (ret < 1)
-        errormsg("can't send spi message");
-
-    // Convert Return Values Back to a Hexstring
-    unsigned int i;
-    char* buf_str = (char*) malloc (2*ARRAY_SIZE(rx)+1);
-    char* buf_ptr = buf_str;
-    for (i = 0; i < ARRAY_SIZE(rx); i++)
-    {
-       buf_ptr += sprintf(buf_ptr, "%02X", rx[i]);
-    }
-    *(buf_ptr + 1) = '\0';
-    return scope.Close(String::New(buf_str));
-}
->>>>>>> origin/master
 
 	info.GetReturnValue().Set(Nan::New(buf_str).ToLocalChecked());
 	free(buf_str);
@@ -693,11 +630,7 @@ void Time(const Nan::FunctionCallbackInfo<v8::Value>& info)
 			success = false;
 	}
 
-<<<<<<< HEAD
 	printf("%sTotal time for %d iterations was %ld us (%ld us per iteration), min: %ld, max: %ld\n", success ? "Success: " : "FAILED: ", iterations, telapsed, telapsed / iterations, min, max);
-=======
-	fprintf(stdout, "%sTotal time for %d iterations was %ld us (%ld us per iteration), min: %ld, max: %ld\n", success ? "Success: " : "FAILED: " , iterations, telapsed, telapsed / iterations, min, max);
->>>>>>> origin/master
 
 	info.GetReturnValue().Set(Nan::New<Number>(success ? 0 : -1));
 }
@@ -750,53 +683,8 @@ void DigitalPulse(const Nan::FunctionCallbackInfo<v8::Value>& info)
 
 void InitializeISR(const Nan::FunctionCallbackInfo<v8::Value>& info)
 {
-<<<<<<< HEAD
 	if (info.Length() < 1 || info.Length() > 3)
 		errormsg("Expected 1-3 args, the interrupt pin number, pullup (0-off, 1-down, 2-up), isr edge(setup-0, falling-1, rising-2, both-3)");
-=======
-	//printf("interrupt\n");
-	// handle interrupt here (connect DO pin on chip to ISR_PIN gpio input pin on pi)
-	char tx[] = {   0x0E, 0xFF, 0xFF, 0xFF,   // read inst current
-					0x10, 0xFF, 0xFF, 0xFF,   // read int voltage
-					0x5E, 0xFF, 0xFF, 0xFF};  // clear status
-	int ret = SendSpi(tx, tx, 12);
-	if (ret < 1) {
-		fprintf (stderr, "can't read from Isr: %s\n", strerror (errno)) ;
-		//errormsg("can't read from Isr");
-	}
-	else
-	{
-		// cache results
-		long elapsed = 0;
-
-		if (isrSampleCount == 0)
-		{
-			isrStartTime = timer_start();
-		}
-		else
-		{
-			elapsed = elapsedTime(isrStartTime);
-		}
-		
-		if (isrSampleCount >= isrMaxSampleCount || elapsed > 5E8)  // stop after buffer is full or .5 sec has elapsed 
-		{
-			// maybe enable interrupt for DRDY ????
-			DisableInterrupts();	
-		}
-		else
-		{
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE), tx+1, 3);      // inst current
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 3, tx+5, 3);  // inst voltage
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 6, &elapsed, 4);   // timestamp in ns
-			isrSampleCount++;
-		}
-	}
-}
-
-Handle<Value> InitializeISR(const Arguments& args) {
-    if (args.Length() < 1 || args.Length() > 3)
-		return ThrowException(Exception::TypeError(String::New("Expected 1-3 args, the interrupt pin number, pullup (0-off, 1-down, 2-up), isr edge(setup-0, falling-1, rising-2, both-3)")));
->>>>>>> origin/master
 
 	if (ISR_PIN == -1)
 	{
