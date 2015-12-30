@@ -26,6 +26,7 @@
     "license": "BSD",
     "gypfile": true,
     "dependencies": {
-        "node-gyp": "*"
+        "node-gyp": "*",
+        "nan": "^2.0.5"
     }
 }
