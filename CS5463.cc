@@ -6,6 +6,8 @@ using namespace v8;
 using namespace node;
 
 #include <unistd.h>
+#include <semaphore.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +36,8 @@ volatile static int isrSampleCount;
 static int isrMaxSampleCount;
 static struct timespec isrStartTime;
 static int ISR_PIN = -1;
+static sem_t semDataReady;
+static char mask;
 
 static char* Timestamp()
 {
@@ -81,14 +85,8 @@ int SendSpi(char * txBuffer, char * rxBuffer, int bufferLen)
 	int ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 	if (ret == -1) {
 		printf("SendSpi error: %s\n", strerror(errno));
-
-		printf("txBuffer: [");
-		for (int i = 0; i < bufferLen; i++)
-			printf("%d, ", txBuffer[i]);
-		printf("]\n");
-		printf("rxBuffer: %s\n", rxBuffer);
-		printf("bufferLen: %d\n", bufferLen);
 	}
+
 	return ret;
 }
 
@@ -101,70 +99,93 @@ long elapsedTime(struct timespec start_time) {
 
 void DisableInterrupts()
 {
+	mask = 0x0;
 	// disable interrupts
 	char tx[] = { 0x74, 0x00, 0x00, 0x00 };
 	int ret = SendSpi(tx, tx, 4);
 	if (ret < 1)
 		errormsg("DisableInterrupts failed");
+
+	//printf("interrupts disabled\n");
 }
 
-void EnableInterrupts(char * buffer, int maxSamples)
+void EnableInterrupts(bool DRDY)
 {
-	isrSampleCount = 0;
-	isrMaxSampleCount = maxSamples;
-	isrResultBuffer = buffer;
+	mask = DRDY ? 0x80 : 0x10;
 
 	char tx[] = { 0x5E, 0xFF, 0xFF, 0xFF,   // clear status
-		0x74, 0x10, 0x00, 0x00 }; // enable interrupts (0x74 = write to Mask) (0x10 = fire on CRDY)
+		0x74, mask, 0x00, 0x00 }; // enable/disable interrupts (0x74 = write to Mask) 
 	int ret = SendSpi(tx, tx, 8);
 	if (ret < 1)
 		errormsg("EnableInterrupts failed");
+
+	//printf("interrupts enabled:  %x\n", mask);
 }
 
 void IsrHandler(void)
 {
-	//printf("interrupt\n");
+	//printf("interrupt elasped: %ld\n", (long) (elapsedTime(isrStartTime) / 1E6));
 	// handle interrupt here (connect DO pin on chip to ISR_PIN gpio input pin on pi)
-	char tx[] = { 0x0E, 0xFF, 0xFF, 0xFF,		// read inst current
-		0x10, 0xFF, 0xFF, 0xFF,		// read inst voltage
-		0x5E, 0xFF, 0xFF, 0xFF };	// clear status
+	if (mask == 0x80)
+	{
+		char rx[] = { 0x1E, 0xFF, 0xFF, 0xFF, 0x5E, 0xFF, 0xFF, 0xFF };  // read status, clear status
 
-	int ret = SendSpi(tx, tx, 12);
+		if (SendSpi(rx, rx, 8) < 1)
+			errormsg("can't send spi message");
 
-	if (ret < 1) {
-		printf("can't read from Isr: %s\n", strerror(errno));
-		//errormsg("can't read from Isr");
+		if (rx[1] & 0x80) {
+			if (sem_post(&semDataReady) == -1)
+				errormsg("sem_post() failed");
+
+			mask = 0x0;
+		}
+	}
+	else if (mask == 0x10)
+	{
+		char tx[] = { 0x0E, 0xFF, 0xFF, 0xFF,		// read inst current
+			0x10, 0xFF, 0xFF, 0xFF,		// read inst voltage
+			0x5E, 0xFF, 0xFF, 0xFF };	// clear status
+
+		int ret = SendSpi(tx, tx, 12);
+
+		if (ret < 1) {
+			printf("can't read from Isr: %s\n", strerror(errno));
+			//errormsg("can't read from Isr");
+		}
+		else
+		{
+			// cache results
+			long elapsed = 0;
+
+			if (isrSampleCount == 0)
+			{
+				isrStartTime = timer_start();
+			}
+			else
+			{
+				elapsed = elapsedTime(isrStartTime);
+			}
+
+			if (isrSampleCount >= isrMaxSampleCount/* || elapsed > 5E8*/)  // stop after buffer is full or .5 sec has elapsed 
+			{
+				//printf("finished collecting %d samples at: %ld\n", isrSampleCount, (long) (elapsed / 1E6));
+				EnableInterrupts(true);
+			}
+			else
+			{
+				memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE), tx + 1, 3);      // inst current
+				memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 3, tx + 5, 3);  // inst voltage
+				memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 6, &elapsed, 4);   // timestamp in ns
+				isrSampleCount++;
+			}
+		}
 	}
 	else
 	{
-		// cache results
-		long elapsed = 0;
-
-
-		if (isrSampleCount == 0)
-		{
-			isrStartTime = timer_start();
-		}
-		else
-		{
-			elapsed = elapsedTime(isrStartTime);
-		}
-
-		if (isrSampleCount >= isrMaxSampleCount || elapsed > 5E8)  // stop after buffer is full or .5 sec has elapsed 
-		{
-			// maybe enable interrupt for DRDY ????
-			DisableInterrupts();
-		}
-		else
-		{
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE), tx + 1, 3);      // inst current
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 3, tx + 5, 3);  // inst voltage
-			memcpy(isrResultBuffer + (isrSampleCount*SAMPLE_SIZE) + 6, &elapsed, 4);   // timestamp in ns
-			isrSampleCount++;
-		}
+		char tx[] = { 0x5E, 0xFF, 0xFF, 0xFF };	// clear status
+		SendSpi(tx, tx, 4);
 	}
 }
-
 
 int OpenDevice(const char * device) {
 	// Open Device and Check
@@ -272,6 +293,7 @@ void Open(const Nan::FunctionCallbackInfo<v8::Value>& info)
 
 	printf("Opening device: %s at %d\n", device, speed);
 	ret = OpenDevice(device);
+
 
 
 	info.GetReturnValue().Set(Nan::New<Number>(ret));
@@ -404,10 +426,85 @@ void Open(const Nan::FunctionCallbackInfo<v8::Value>& info)
 //	return v8::Integer::New(num);
 //}
 
+int ReadCycleCount()
+{
+	char rx[] = { 0x0A, 0xFF, 0xFF, 0xFF };  // read cycle count
+
+	// read cycle count register
+	int ret = SendSpi(rx, rx, 4);
+	if (ret < 1)
+		errormsg("read cycle count failed");
+
+	return (*(rx + 1) << 16) + (*(rx + 2) << 8) + *(rx + 3);
+}
+
+bool VerifyCycleCompleted()
+{
+	char rx[] = { 0x1E, 0xFF, 0xFF, 0xFF };  // read status
+
+	if (SendSpi(rx, rx, 4) < 1)
+		errormsg("can't send spi message");
+
+	CheckStatusResult(rx + 1, true);
+	//printf("rx[1]: %x\n", rx[1]);
+
+	return (rx[1] & 0x80);
+}
+
+int Read(bool collectSamples)
+{
+	int ret = 0;
+	struct timespec ts;
+
+	// read cycle count register to calculate how long it should take for a cycle to complete
+	int cycleCount = ReadCycleCount();
+	long long cycleTime = 1000000000.0 * (cycleCount / 4000.0);
+
+	// the first sample takes an additional 0.75 sec so add 1 sec to timeout
+	long long timeout = 1000000000.0 + cycleTime;
+
+	if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
+		errormsg("clock_gettime");
+
+	// normalize timespec for timeout	
+	long long nsec = ts.tv_nsec + timeout;
+	while (nsec >= 1000000000) {
+		nsec -= 1000000000;
+		++ts.tv_sec;
+	}
+	ts.tv_nsec = nsec;
+
+	// Initialize semaphore
+	if (sem_init(&semDataReady, 0, 0) == -1)
+		errormsg("sem_init");
+
+	isrStartTime = timer_start();
+
+	EnableInterrupts(!collectSamples);
+
+	while ((ret = sem_timedwait(&semDataReady, &ts)) == -1 && errno == EINTR) {
+		continue;
+	}
+
+	if (ret == -1)
+	{
+		if (errno == ETIMEDOUT)
+			printf("sem_timedwait() timed out\n");
+		else
+			perror("sem_timedwait error");
+	}
+
+	DisableInterrupts();
+
+	if (sem_destroy(&semDataReady) == -1)
+		errormsg("sem_destroy");
+
+	return ret;
+}
+
+
 void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 {
-	//HandleScope scope;
-
 	// make sure device is open    
 	if (fd == 0) {
 		errormsg("Must call Open first");
@@ -417,22 +514,9 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		errormsg("Expected 1 argument - buffer");
 
 	int ret = 0;
-	struct timespec startTime;
-	long elapsed = 0;
-
-	char rx[12];  // must be as big as the largest command
-
-	char txRead[12];
-	memset(txRead, 0xFF, 12);
-	txRead[0] = 0x1E;  // read status
-	txRead[4] = 0x0E;  // read inst current
-	txRead[8] = 0x10;  // read int voltage
-
+	char rx[4];  // must be as big as the largest command
 	char txClear[] = { 0x5E, 0xFF, 0xFF, 0xFF };  // clear status
-
 	char txStart[] = { 0xE8 };  // start continuous conversions
-	//char txStart[] = { 0xE0 };  // start single conversion
-
 	char txHalt[] = { 0xA0 };  // stop computations
 
 
@@ -444,6 +528,10 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	out_length = Buffer::Length(out_buffer_obj);
 	int MAX_RESULTS = out_length / SAMPLE_SIZE;
 
+	isrSampleCount = 0;
+	isrMaxSampleCount = MAX_RESULTS;
+	isrResultBuffer = out_buffer;
+
 	//printf("SAMPLE_SIZE is %d bytes\n", SAMPLE_SIZE);
 	//printf("input buffer is %d bytes\n", out_length);
 	//printf("will collect a maximum of %d samples\n", MAX_RESULTS);
@@ -453,29 +541,15 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (ret < 1)
 		errormsg("clear failed");
 
-
 	// start conversions
 	ret = SendSpi(txStart, rx, 1);
 	if (ret < 1)
 		errormsg("start failed");
 
-	// swallow one cycle to let the filters settle
-	startTime = timer_start();
-	do
-	{
-		// read status
-		ret = SendSpi(txRead, rx, 4);
-		if (ret < 1)
-			errormsg("can't send spi message");
-
-		CheckStatusResult(rx + 1, false);
-
-		elapsed = elapsedTime(startTime);
-
-	} while (!(rx[1] & 0x80) && elapsed < 2E9);
-
-	if (!(rx[1] & 0x80))
-		errormsg("Unable to read initial cycle to let filters settle");
+	// read one cycle and throw away to let filters settle
+	ret = Read(false);
+	if (ret != 0)
+		errormsg("read initial cycle failed");
 
 	// clear status
 	ret = SendSpi(txClear, rx, 4);
@@ -483,47 +557,16 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		errormsg("clear failed");
 
 	// read instantaneous values for full cycle
-	bool doInterrupts = true;
-	startTime = timer_start();
-	do
-	{
-		// read status, vInst and iInst
-		ret = SendSpi(txRead, rx, 12);
-		if (ret < 1)
-			errormsg("can't send spi message");
+	ret = Read(true);
+	if (ret != 0)
+		errormsg("read full cycle failed");
 
-		CheckStatusResult(rx + 1, false);
+	// halt conversions
+	if (SendSpi(txHalt, rx, 1) < 1)
+		errormsg("halt failed");
 
-		elapsed = elapsedTime(startTime);
-
-		// Check CRDY bit
-		if (elapsed > 1E7 && doInterrupts && (rx[1] & 0x10))
-		{
-			doInterrupts = false;
-
-			// start interrupt handler
-			//printf("enable ints\n");
-			EnableInterrupts(out_buffer, MAX_RESULTS);
-
-			// sleep for 500 ms
-			// TODO: should also wake up when DRDY bit is set - do this with interrupt on DRDY
-			usleep(500000);
-
-			DisableInterrupts();
-			//printf("disable ints: %d\n", isrSampleCount);
-		}
-	} while (!(rx[1] & 0x80) && elapsed < 2E9);
-
-	if (txStart[0] == 0xE8)
-	{
-		// halt conversions
-		ret = SendSpi(txHalt, rx, 1);
-		if (ret < 1)
-			errormsg("halt failed");
-	}
-
-	if (elapsed >= 2E9)
-		return info.GetReturnValue().Set(Nan::New<Number>(-2));
+	if (ret != 0)
+		return info.GetReturnValue().Set(Nan::New<Number>(ret));
 	else
 		return info.GetReturnValue().Set(Nan::New<Number>(isrSampleCount));
 }
