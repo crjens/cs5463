@@ -517,7 +517,7 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (txStart[0] == 0xE8)
 	{
 		// halt conversions
-		ret = SendSpi(txHalt, rx, 4);
+		ret = SendSpi(txHalt, rx, 1);
 		if (ret < 1)
 			errormsg("halt failed");
 	}
