@@ -142,11 +142,11 @@ void IsrHandler(void)
 	}
 	else if (mask == 0x10)
 	{
-		char tx[] = { 0x0E, 0xFF, 0xFF, 0xFF,		// read inst current
-			0x10, 0xFF, 0xFF, 0xFF,		// read inst voltage
-			0x5E, 0xFF, 0xFF, 0xFF };	// clear status
+		char tx[] = { 0x0E, 0xFF, 0xFF, 0xFF,	// read inst current
+			0x10, 								// read inst voltage
+			0x5E, 0xFF, 0xFF, 0xFF };			// clear status
 
-		int ret = SendSpi(tx, tx, 12);
+		int ret = SendSpi(tx, tx, 9);
 
 		if (ret < 1) {
 			printf("can't read from Isr: %s\n", strerror(errno));
@@ -279,8 +279,8 @@ void Open(const Nan::FunctionCallbackInfo<v8::Value>& info)
 {
 	int ret = 0;
 
-	if (info.Length() < 1 || info.Length() > 2)
-		errormsg("Expected 1 or 2 arguments - deviceName, (optional) speed");
+	if (info.Length() < 1 || info.Length() > 5)
+		errormsg("Expected 1-5 arguments - deviceName, (optional) speed, (optional) mode, (optional) bits, (optional) us delay");
 
 	if (fd != 0)
 		close(fd);
@@ -288,13 +288,20 @@ void Open(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	String::Utf8Value str(info[0]);
 	char* device = (char*)ToCString(str);
 
-	if (info.Length() == 2)
+	if (info.Length() > 1)
 		speed = (int)(Local<Integer>::Cast(info[1])->Int32Value());
 
-	printf("Opening device: %s at %d\n", device, speed);
+	if (info.Length() > 2)
+		mode = (int)(Local<Integer>::Cast(info[2])->Int32Value());
+
+	if (info.Length() > 3)
+		bits = (int)(Local<Integer>::Cast(info[3])->Int32Value());
+
+	if (info.Length() > 4)
+		delayTime = (uint16_t)(Local<Integer>::Cast(info[4])->Int32Value());
+
+	printf("Opening device: %s at %d Hz, mode %d, %d bits, %d us delay\n", device, speed, mode, bits, (int)delayTime);
 	ret = OpenDevice(device);
-
-
 
 	info.GetReturnValue().Set(Nan::New<Number>(ret));
 }
@@ -478,8 +485,6 @@ int Read(bool collectSamples)
 	if (sem_init(&semDataReady, 0, 0) == -1)
 		errormsg("sem_init");
 
-	isrStartTime = timer_start();
-
 	EnableInterrupts(!collectSamples);
 
 	while ((ret = sem_timedwait(&semDataReady, &ts)) == -1 && errno == EINTR) {
@@ -610,6 +615,7 @@ void Send(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		buf_ptr += sprintf(buf_ptr, "%02X", rx[i]);
 	}
 	*(buf_ptr + 1) = '\0';
+	//printf("send returned: %s\n", buf_str);
 
 	info.GetReturnValue().Set(Nan::New(buf_str).ToLocalChecked());
 	free(buf_str);
