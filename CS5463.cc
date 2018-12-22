@@ -285,20 +285,21 @@ void Open(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (fd != 0)
 		close(fd);
 
-	String::Utf8Value str(info[0]);
+	Isolate* isolate = info.GetIsolate();
+	String::Utf8Value str(isolate, info[0]);
 	char* device = (char*)ToCString(str);
 
 	if (info.Length() > 1)
-		speed = (int)(Local<Integer>::Cast(info[1])->Int32Value());
+		speed = Nan::To<int32_t>(info[1]).FromJust();
 
 	if (info.Length() > 2)
-		mode = (int)(Local<Integer>::Cast(info[2])->Int32Value());
+		mode = Nan::To<int32_t>(info[2]).FromJust();
 
 	if (info.Length() > 3)
-		bits = (int)(Local<Integer>::Cast(info[3])->Int32Value());
+		bits = Nan::To<int32_t>(info[3]).FromJust();
 
 	if (info.Length() > 4)
-		delayTime = (uint16_t)(Local<Integer>::Cast(info[4])->Int32Value());
+		delayTime = (uint16_t)Nan::To<int32_t>(info[4]).FromJust();;
 
 	printf("Opening device: %s at %d Hz, mode %d, %d bits, %d us delay\n", device, speed, mode, bits, (int)delayTime);
 	ret = OpenDevice(device);
@@ -523,12 +524,13 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	char txClear[] = { 0x5E, 0xFF, 0xFF, 0xFF };  // clear status
 	char txStart[] = { 0xE8 };  // start continuous conversions
 	char txHalt[] = { 0xA0 };  // stop computations
-
+	
+	Isolate* isolate = info.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+  	Local<Object> out_buffer_obj = info[0]->ToObject(context).ToLocalChecked();
 
 	char* out_buffer = NULL;
 	size_t out_length = -1;
-	Local<Object> out_buffer_obj;
-	out_buffer_obj = info[0]->ToObject();
 	out_buffer = Buffer::Data(out_buffer_obj);
 	out_length = Buffer::Length(out_buffer_obj);
 	int MAX_RESULTS = out_length / SAMPLE_SIZE;
@@ -585,9 +587,10 @@ void Send(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		errormsg("Must call Open first");
 	}
 	int ret = 0;
+	Isolate* isolate = info.GetIsolate();
 
 	//Hexstring as first Argument. Convert it to Hex-Array
-	String::Utf8Value str(info[0]);
+	String::Utf8Value str(isolate, info[0]);
 	const char* hexinput = ToCString(str);
 
 	int len = strlen(hexinput);
@@ -689,8 +692,8 @@ void PinMode(const Nan::FunctionCallbackInfo<v8::Value>& info) {
 	if (info.Length() != 2)
 		errormsg("Expected 2 arguments - pinNum and direction (in=0, out=1)");
 
-	int pin = (int)(Local<Integer>::Cast(info[0])->Int32Value());
-	int mode = (int)(Local<Integer>::Cast(info[1])->Int32Value());
+	int pin = Nan::To<int>(info[0]).FromJust();
+	int mode = Nan::To<int>(info[1]).FromJust();
 
 	pinMode(pin, mode);
 
@@ -702,8 +705,8 @@ void DigitalWrite(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (info.Length() != 2)
 		errormsg("Expected 2 arguments - pinNum and value (0 or 1)");
 
-	int pin = (int)(Local<Integer>::Cast(info[0])->Int32Value());
-	int value = (int)(Local<Integer>::Cast(info[1])->Int32Value());
+	int pin = Nan::To<int>(info[0]).FromJust();
+	int value = Nan::To<int>(info[1]).FromJust();
 
 	digitalWrite(pin, value);
 
@@ -715,10 +718,10 @@ void DigitalPulse(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (info.Length() != 4)
 		errormsg("Expected 4 arguments - pinNum, value1, value2 and delay time in microseconds");
 
-	int pin = (int)(Local<Integer>::Cast(info[0])->Int32Value());
-	int value1 = (int)(Local<Integer>::Cast(info[1])->Int32Value());
-	int value2 = (int)(Local<Integer>::Cast(info[2])->Int32Value());
-	int delay = (int)(Local<Integer>::Cast(info[3])->Int32Value());
+	int pin = Nan::To<int>(info[0]).FromJust();
+	int value1 = Nan::To<int>(info[1]).FromJust();
+	int value2 = Nan::To<int>(info[2]).FromJust();
+	int delay = Nan::To<int>(info[3]).FromJust();
 
 	digitalWrite(pin, value1);
 	//fprintf(stdout, "pin: %d set to: %d\n", pin, value1);
@@ -737,12 +740,12 @@ void InitializeISR(const Nan::FunctionCallbackInfo<v8::Value>& info)
 
 	if (ISR_PIN == -1)
 	{
-		ISR_PIN = (int)(Local<Integer>::Cast(info[0])->Int32Value());
+		ISR_PIN = Nan::To<int>(info[0]).FromJust();
 		int upDn = 0, edge = 1;
 		if (info.Length() >1)
-			upDn = (int)(Local<Integer>::Cast(info[1])->Int32Value());
+			upDn = Nan::To<int>(info[1]).FromJust();
 		if (info.Length() >2)
-			edge = (int)(Local<Integer>::Cast(info[2])->Int32Value());
+			edge = Nan::To<int>(info[2]).FromJust();
 
 		fprintf(stdout, "setting isr pin to: %d, upDn: %d, edge: %d\n", ISR_PIN, upDn, edge);
 
