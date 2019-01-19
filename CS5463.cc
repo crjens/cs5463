@@ -773,17 +773,11 @@ NAN_MODULE_INIT(InitAll) {
 	Nan::Set(target, Nan::New("DigitalPulse").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(DigitalPulse)).ToLocalChecked());
 	Nan::Set(target, Nan::New("InitializeISR").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(InitializeISR)).ToLocalChecked());
 
-	if (wiringPiSetup() < 0)
+	if (wiringPiSetupPhys () < 0)
 	{
 		fprintf(stderr, "Unable to setup wiringPi: %s\n", strerror(errno));
 		errormsg("Unable to setup wiringPi");
 	}
-
-	/*if (piHiPri(99) < 0)
-	{
-	fprintf (stderr, "Unable to set thread priority: %s\n", strerror (errno)) ;
-	errormsg("Unable to set thread priority");
-	}*/
 }
 
 NODE_MODULE(cs5463, InitAll)
