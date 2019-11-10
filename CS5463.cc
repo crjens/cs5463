@@ -3,7 +3,7 @@
 #include <v8.h>
 
 using namespace v8;
-using namespace node;
+using namespace node; 
 
 #include <unistd.h>
 #include <semaphore.h>
@@ -471,6 +471,8 @@ int Read(bool collectSamples)
 	// the first sample takes an additional 0.75 sec so add 1 sec to timeout
 	long long timeout = 1000000000.0 + cycleTime;
 
+	isrMaxSampleCount = MIN(isrMaxSampleCount, cycleCount);
+
 	if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
 		errormsg("clock_gettime");
 
@@ -554,9 +556,12 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 		errormsg("start failed");
 
 	// read one cycle and throw away to let filters settle
-	ret = Read(false);
-	if (ret != 0)
-		errormsg("read initial cycle failed");
+	//ret = Read(false);
+	//if (ret != 0)
+	//	errormsg("read initial cycle failed");
+
+	// wait for filters to settle before starting calculations
+	delayMicroseconds(5000);
 
 	// clear status
 	ret = SendSpi(txClear, rx, 4);
