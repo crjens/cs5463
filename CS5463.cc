@@ -555,12 +555,7 @@ void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 	if (ret < 1)
 		errormsg("start failed");
 
-	// read one cycle and throw away to let filters settle
-	//ret = Read(false);
-	//if (ret != 0)
-	//	errormsg("read initial cycle failed");
-
-	// wait for filters to settle before starting calculations
+	// wait 5ms for filters to settle before starting calculations
 	delayMicroseconds(5000);
 
 	// clear status
