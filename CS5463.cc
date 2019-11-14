@@ -510,6 +510,12 @@ int Read(bool collectSamples)
 	return ret;
 }
 
+void DriverVersion(const Nan::FunctionCallbackInfo<v8::Value>& info)
+{
+	Isolate* isolate = info.GetIsolate();
+	std::string version("CS5463 v1.0");
+	info.GetReturnValue().Set(String::NewFromUtf8( isolate, version.c_str() )); 
+}
 
 void ReadCycleWithInterrupts(const Nan::FunctionCallbackInfo<v8::Value>& info)
 {
@@ -772,6 +778,7 @@ NAN_MODULE_INIT(InitAll) {
 	Nan::Set(target, Nan::New("DigitalWrite").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(DigitalWrite)).ToLocalChecked());
 	Nan::Set(target, Nan::New("DigitalPulse").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(DigitalPulse)).ToLocalChecked());
 	Nan::Set(target, Nan::New("InitializeISR").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(InitializeISR)).ToLocalChecked());
+	Nan::Set(target, Nan::New("DriverVersion").ToLocalChecked(), Nan::GetFunction(Nan::New<v8::FunctionTemplate>(DriverVersion)).ToLocalChecked());
 
 	if (wiringPiSetupPhys () < 0)
 	{
